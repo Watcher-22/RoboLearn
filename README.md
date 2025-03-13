@@ -8,6 +8,7 @@ Ein interaktives Lernprogramm zur Einführung in die Programmierung durch visuel
   - Level 1: Direkte Steuerung
   - Level 2: Block-basierte Programmierung
   - Level 3: Freies Programmieren
+  - Level 4: Optimale Route
 
 - **Programmierbefehle**
   - Vorwärts
