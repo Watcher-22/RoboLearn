@@ -53,8 +53,14 @@ namespace Open_Day
             // CheckForCoin()     - Prüft ob eine Münze auf dem aktuellen Feld liegt
             // CheckAtGoal()      - Prüft ob das Ziel erreicht wurde
 
-            // SCHREIBE DEINEN CODE HIER:
+            // FÜR ERFAHRENE PROGRAMMIERER:
+            // Schau dir die Methoden in Form1.cs aus der ~#region Game Logic~ und die anderen Klassen an, um einen Algorithmus zu entwickeln, der auf jedem Spielfeld funktioniert
+
             
+            // SCHREIBE DEINEN CODE HIER:
+
+
+
         }
 
         #region Basismethoden
@@ -87,7 +93,6 @@ namespace Open_Day
             await Task.Delay(500);
         }
 
-        // Prüfmethoden bleiben unverändert
         private bool CheckWallAhead() => checkWallAhead();
         private bool CheckForCoin() => checkForCoin();
         private bool CheckAtGoal() => checkAtGoal();

@@ -52,10 +52,8 @@ namespace Open_Day
         {
 
 
-            // Stelle sicher, dass gameField initialisiert wird
             gameField = new GameField(GRID_SIZE, GRID_SIZE);
 
-            // Stelle sicher, dass gameTimer initialisiert ist
             if (gameTimer == null)
             {
                 gameTimer = new Timer
@@ -72,7 +70,6 @@ namespace Open_Day
             int startY = random.Next(1, GRID_SIZE - 1);
             gameField.SetField(0, startY, FieldType.Start);
 
-            // Stelle sicher, dass Bot initialisiert ist
             if (gameField.Bot == null)
             {
                 gameField.Bot = new Bot();
@@ -108,13 +105,11 @@ namespace Open_Day
                 }
             }
 
-            // Zähle die Gesamtanzahl der Münzen
             CountTotalCoins();
 
-            // Aktualisiere die UI-Elemente
             UpdateScoreDisplay();
 
-            // Zeichne das Spielfeld neu
+            // Generiert das Spielfeld neu
             if (gamePanel != null)
             {
                 gamePanel.Invalidate();
@@ -161,11 +156,9 @@ namespace Open_Day
 
         private void InitializeControls()
         {
-            // Hauptform-Einstellungen
             this.Size = new Size(1200, 700);
             this.Text = "Parcour";
 
-            // Spielfeld Panel
             gamePanel = new Panel
             {
                 Location = new Point(20, 20),
@@ -180,7 +173,7 @@ namespace Open_Day
                 Location = new Point(gamePanel.Right + 20, 20),
                 Size = new Size(150, 25)
             };
-            difficultySelect.Items.AddRange(new string[] { "Level 1: GUI", "Level 2: Variablen", "Level 3: Methoden" });
+            difficultySelect.Items.AddRange(new string[] { "Level 1: GUI", "Level 2: Variablen", "Level 3: Methoden", "Level 4 - Optimale Route" });
             difficultySelect.SelectedIndex = 0;
             difficultySelect.SelectedIndexChanged += DifficultySelect_SelectedIndexChanged;
 
@@ -192,15 +185,7 @@ namespace Open_Day
             btnStart = CreateButton("Start", gamePanel.Right + 20, 220);
             btnReset = CreateButton("Zurücksetzen", gamePanel.Right + 20, 260);
 
-            // Code-Editor (für Level 3)
-            codeEditor = new RichTextBox
-            {
-                Location = new Point(gamePanel.Right + 20, 300),
-                Size = new Size(250, 200),
-                Font = new Font("Consolas", 10),
-                Visible = false
-            };
-
+            
             // Controls zur Form hinzufügen
             this.Controls.AddRange(new Control[] {
                 gamePanel,
@@ -237,7 +222,7 @@ namespace Open_Day
             codeWorkspace = new FlowLayoutPanel
             {
                 Location = new Point(blockPalette.Right + 20, 60),
-                Size = new Size(400, 400), // Höhe angepasst
+                Size = new Size(400, 400),
                 FlowDirection = FlowDirection.TopDown,
                 BorderStyle = BorderStyle.FixedSingle,
                 AutoScroll = true,
@@ -304,7 +289,6 @@ namespace Open_Day
 
         private void DrawGrid(Graphics g)
         {
-            // Rasterlinien zeichnen
             for (int i = 0; i <= GRID_SIZE; i++)
             {
                 // Vertikale Linien
@@ -337,7 +321,6 @@ namespace Open_Day
                             break;
                     }
 
-                    // Bot zeichnen
                     if (gameField.Bot.X == x && gameField.Bot.Y == y)
                     {
                         DrawBot(g, cellRect, gameField.Bot.Facing);
@@ -348,7 +331,6 @@ namespace Open_Day
 
         private void DrawBot(Graphics g, Rectangle rect, Direction facing)
         {
-            // Bot als Dreieck zeichnen
             Point[] trianglePoints = new Point[3];
             switch (facing)
             {
@@ -415,6 +397,10 @@ namespace Open_Day
                                 var solution = new UserSolution(this, gameField, gamePanel);
                                 await solution.RunCode();
                             }
+                            else if (difficultySelect.SelectedIndex == 3)
+                            {
+                                await ExecuteOptimalPath();
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -437,7 +423,6 @@ namespace Open_Day
 
         private void SetupLevel1()
         {
-            // GUI-Steuerung aktivieren
             btnMoveForward.Visible = true;
             btnTurnLeft.Visible = true;
             btnTurnRight.Visible = true;
@@ -449,14 +434,12 @@ namespace Open_Day
 
         private void SetupLevel2()
         {
-            // GUI-Steuerung deaktivieren
             btnMoveForward.Visible = false;
             btnTurnLeft.Visible = false;
             btnTurnRight.Visible = false;
             btnCollectCoin.Visible = false;
             codeEditor.Visible = false;
 
-            // Block-System aktivieren
             blockPalette.Visible = true;
             codeWorkspace.Visible = true;
 
@@ -472,7 +455,6 @@ namespace Open_Day
 
         private void SetupLevel3()
         {
-            // GUI-Steuerung und Block-System deaktivieren
             btnMoveForward.Visible = false;
             btnTurnLeft.Visible = false;
             btnTurnRight.Visible = false;
@@ -485,6 +467,7 @@ namespace Open_Day
             btnStart.Location = new Point(gamePanel.Right + 20, 60);
             btnReset.Location = new Point(gamePanel.Right + 20, 100);
         }
+
         private void ResetGame()
         {
             gameTimer.Stop();
@@ -721,6 +704,55 @@ namespace Open_Day
             }
             return false;
         }
+
+        private async Task ExecuteOptimalPath()
+        {
+            var pathFinder = new PathFinder(gameField);
+            var optimalPath = pathFinder.FindOptimalPath();
+            Point currentPosition = new Point(gameField.Bot.X, gameField.Bot.Y);
+
+            foreach (var (position, facing) in optimalPath)
+            {
+                if (gameField.Bot.Facing != facing)
+                {
+                    await TurnToDirection(facing);
+                }
+
+                if (position != currentPosition)
+                {
+                    MoveForward();
+                    currentPosition = position;
+                    gamePanel.Invalidate();
+                    await Task.Delay(500);
+                }
+
+                if (gameField.Field[currentPosition.X, currentPosition.Y] == FieldType.Coin)
+                {
+                    CollectCoin();
+                    gamePanel.Invalidate();
+                    await Task.Delay(500);
+                }
+            }
+        }
+
+        private async Task TurnToDirection(Direction targetDirection)
+        {
+            while (gameField.Bot.Facing != targetDirection)
+            {
+                int diff = ((int)targetDirection - (int)gameField.Bot.Facing + 4) % 4;
+                if (diff > 2 || (diff == 2 && gameField.Bot.Facing == Direction.Left))
+                {
+                    TurnLeft();
+                }
+                else
+                {
+                    TurnRight();
+                }
+                gamePanel.Invalidate();
+                await Task.Delay(500);
+            }
+        }
+
         #endregion
     }
 }

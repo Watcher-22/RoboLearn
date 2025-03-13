@@ -15,7 +15,7 @@ namespace Open_Day
         public int OrderIndex { get; set; }
         private FlowLayoutPanel parentWorkspace;
         private ComboBox commandDropdown;
-        private NumericUpDown repeatCounter; // Hinzugefügt für "Wiederhole x mal"
+        private NumericUpDown repeatCounter; 
         private Color originalColor;
         public List<CodeBlock> NestedBlocks { get; private set; } = new List<CodeBlock>();
         public bool IsSelected { get; private set; }
@@ -35,7 +35,7 @@ namespace Open_Day
 
         private void InitializeComponents()
         {
-            // Block-Text (Titel)
+           
             Label label = new Label
             {
                 Text = BlockType,
@@ -58,7 +58,7 @@ namespace Open_Day
                     DropDownStyle = ComboBoxStyle.DropDownList
                 };
 
-                // Befehle zum Dropdown hinzufügen
+                
                 commandDropdown.Items.AddRange(new string[]
                 {
                 "Vorwärts",
@@ -67,16 +67,16 @@ namespace Open_Day
                 "Münze aufheben"
                 });
 
-                // Optional: Standardtext anzeigen
+                
                 commandDropdown.Items.Insert(0, "-- Befehl auswählen --");
                 commandDropdown.SelectedIndex = 0;
 
                 Controls.Add(commandDropdown);
 
-                // Speziell für "Wiederhole x mal"
+                
                 if (BlockType == "Wiederhole x mal")
                 {
-                    // NumericUpDown für die Anzahl der Wiederholungen
+                    
                     repeatCounter = new NumericUpDown
                     {
                         Location = new Point(280, 40),
@@ -89,7 +89,7 @@ namespace Open_Day
                 }
             }
 
-            // Löschen-Button
+            
             Button btnDelete = new Button
             {
                 Text = "X",
@@ -120,16 +120,16 @@ namespace Open_Day
             {
                 return commandDropdown.SelectedItem.ToString();
             }
-            return BlockType; // Für normale Blöcke
+            return BlockType; 
         }
 
-        // Hinzugefügte Methoden für Selektion
+        
         public void Select()
         {
             IsSelected = true;
             this.BackColor = LightenColor(originalColor, 0.3f);
 
-            // Deselektiere alle anderen Blöcke
+            
             foreach (CodeBlock block in parentWorkspace.Controls.OfType<CodeBlock>())
             {
                 if (block != this)
