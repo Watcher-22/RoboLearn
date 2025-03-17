@@ -185,7 +185,7 @@ namespace Open_Day
             btnStart = CreateButton("Start", gamePanel.Right + 20, 220);
             btnReset = CreateButton("Zurücksetzen", gamePanel.Right + 20, 260);
 
-            
+
             // Controls zur Form hinzufügen
             this.Controls.AddRange(new Control[] {
                 gamePanel,
@@ -196,8 +196,9 @@ namespace Open_Day
                 btnCollectCoin,
                 btnStart,
                 btnReset,
-                codeEditor
-            });
+                blockPalette,  
+                codeWorkspace  
+    });
 
             // Block-Palette und Workspace für Level 2 (initial versteckt)
             InitializeBlockPanels();
@@ -438,7 +439,6 @@ namespace Open_Day
             btnTurnLeft.Visible = false;
             btnTurnRight.Visible = false;
             btnCollectCoin.Visible = false;
-            codeEditor.Visible = false;
 
             blockPalette.Visible = true;
             codeWorkspace.Visible = true;
