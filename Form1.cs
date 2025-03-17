@@ -29,7 +29,6 @@ namespace Open_Day
         private Button btnCollectCoin;
         private Button btnStart;
         private Button btnReset;
-        private RichTextBox codeEditor;
 
         // Goodies
         private Timer gameTimer;
@@ -430,7 +429,6 @@ namespace Open_Day
             btnCollectCoin.Visible = true;
             blockPalette.Visible = false;
             codeWorkspace.Visible = false;
-            codeEditor.Visible = false;
         }
 
         private void SetupLevel2()
