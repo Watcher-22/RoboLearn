@@ -162,7 +162,7 @@ namespace Open_Day
         private void InitializeControls()
         {
             this.Size = new Size(1250, 650);
-            this.Text = "Parcour";
+            this.Text = "RoboLearn";
 
             gamePanel = new Panel
             {
