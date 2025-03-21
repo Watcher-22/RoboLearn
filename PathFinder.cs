@@ -12,7 +12,6 @@ namespace Open_Day
         private class PriorityQueue
         {
             private List<PathNode> elements = new List<PathNode>();
-
             public int Count => elements.Count;
 
             public void Enqueue(PathNode item)
@@ -25,7 +24,6 @@ namespace Open_Day
             {
                 if (elements.Count == 0)
                     throw new InvalidOperationException("Queue is empty");
-
                 var item = elements[0];
                 elements.RemoveAt(0);
                 return item;
@@ -40,7 +38,7 @@ namespace Open_Day
         public PathFinder(GameField gameField)
         {
             this.gameField = gameField;
-            this.gridSize = gameField.Field.GetLength(0);
+            this.gridSize = Form1.GRID_SIZE;
             this.coins = FindCoins();
             this.goal = FindGoal();
         }
@@ -63,78 +61,85 @@ namespace Open_Day
 
         private Point FindGoal()
         {
-            for (int x = 0; x < gridSize; x++)
-            {
                 for (int y = 0; y < gridSize; y++)
                 {
-                    if (gameField.Field[x, y] == FieldType.Goal)
-                    {
-                        return new Point(x, y);
+                    if (gameField.Field[Form1.GRID_SIZE - 1, y] == FieldType.Goal)
+                {
+                        return new Point(Form1.GRID_SIZE - 1, y);
                     }
                 }
-            }
             return Point.Empty;
+        }
+
+        private List<Point> CalculateOptimalCoinOrder(Point start, List<Point> remainingCoins)
+        {
+            if (!remainingCoins.Any())
+                return new List<Point>();
+
+            var optimalOrder = new List<Point>();
+            var currentPos = start;
+            var unvisitedCoins = new List<Point>(remainingCoins);
+
+            while (unvisitedCoins.Count > 0)
+            {
+                var distances = unvisitedCoins.Select(coin =>
+                {
+                    var pathLength = FindPathTo(currentPos, coin, gameField.Bot.Facing, false).Count;
+                    return (coin, pathLength);
+                });
+
+                var nearest = distances.OrderBy(x => x.pathLength).First().coin;
+                optimalOrder.Add(nearest);
+                currentPos = nearest;
+                unvisitedCoins.Remove(nearest);
+            }
+
+            return optimalOrder;
         }
 
         public List<(Point position, Direction facing)> FindOptimalPath()
         {
-            var path = new List<(Point position, Direction facing)>();
-            var currentPos = new Point(gameField.Bot.X, gameField.Bot.Y);
+            var completePath = new List<(Point position, Direction facing)>();
+            var startPos = new Point(gameField.Bot.X, gameField.Bot.Y);
             var currentDir = gameField.Bot.Facing;
-            var remainingCoins = new List<Point>(coins);
 
-            while (remainingCoins.Count > 0 || currentPos != goal)
+            
+            var optimalCoinOrder = CalculateOptimalCoinOrder(startPos, coins);
+
+            // Optimaler Pfad
+            var currentPos = startPos;
+            foreach (var coinPos in optimalCoinOrder)
             {
-                if (remainingCoins.Count > 0)
-                {
-                    // Finde nächste Münze
-                    var nextCoin = FindNearestPoint(currentPos, remainingCoins);
-                    var coinPath = FindPathTo(currentPos, nextCoin, currentDir);
-                    path.AddRange(coinPath);
-
-                    
-                    currentPos = nextCoin;
-                    currentDir = path[path.Count - 1].facing;
-                    remainingCoins.Remove(nextCoin);
-                }
-                else
-                {
-                    // Zum Ziel gehen
-                    var goalPath = FindPathTo(currentPos, goal, currentDir);
-                    path.AddRange(goalPath);
-                    break;
-                }
+                var pathToCoin = FindPathTo(currentPos, coinPos, currentDir, false);
+                completePath.AddRange(pathToCoin);
+                currentPos = coinPos;
+                currentDir = completePath[completePath.Count - 1].facing;
             }
 
-            return path;
-        }
+            // Erst ins Ziel, wenn alle Münzen
+            var pathToGoal = FindPathTo(currentPos, goal, currentDir, true);
+            completePath.AddRange(pathToGoal);
 
-        private Point FindNearestPoint(Point start, List<Point> targets)
-        {
-            return targets.OrderBy(t =>
-                Math.Abs(t.X - start.X) + Math.Abs(t.Y - start.Y)).First();
+            return completePath;
         }
 
         private List<(Point position, Direction facing)> FindPathTo(
-            Point start, Point target, Direction startFacing)
+            Point start, Point target, Direction startFacing, bool isGoal)
         {
-            var path = new List<(Point position, Direction facing)>();
             var visited = new HashSet<Point>();
             var queue = new PriorityQueue();
-
             queue.Enqueue(new PathNode(start, startFacing, 0, new List<(Point, Direction)>()));
             visited.Add(start);
 
             while (queue.Count > 0)
             {
                 var current = queue.Dequeue();
-
                 if (current.Position == target)
                 {
                     return current.Path;
                 }
 
-                foreach (var next in GetNextMoves(current))
+                foreach (var next in GetNextMoves(current, isGoal))
                 {
                     if (!visited.Contains(next.Position))
                     {
@@ -144,34 +149,27 @@ namespace Open_Day
                 }
             }
 
-            return path;
+            return new List<(Point position, Direction facing)>();
         }
 
-        private List<PathNode> GetNextMoves(PathNode node)
+        private List<PathNode> GetNextMoves(PathNode node, bool isGoal)
         {
             var moves = new List<PathNode>();
             var directions = Enum.GetValues(typeof(Direction)).Cast<Direction>();
 
             foreach (var dir in directions)
             {
-                
                 int turnCost = CalculateTurnCost(node.Facing, dir);
-
-                
                 var newPos = GetNextPosition(node.Position, dir);
-                if (IsValidMove(newPos))
+
+                if (IsValidMove(newPos, isGoal))
                 {
                     var newPath = new List<(Point, Direction)>(node.Path);
-
-                    // Füge Drehungen hinzu wenn nötig
                     if (turnCost > 0)
                     {
                         newPath.Add((node.Position, dir));
                     }
-
-                    // Füge Bewegung hinzu
                     newPath.Add((newPos, dir));
-
                     moves.Add(new PathNode(
                         newPos,
                         dir,
@@ -180,18 +178,29 @@ namespace Open_Day
                     ));
                 }
             }
-
             return moves;
         }
 
+        private bool IsValidMove(Point pos, bool isGoal)
+        {
+            if (pos.X < 0 || pos.X >= gridSize || pos.Y < 0 || pos.Y >= gridSize)
+                return false;
+
+            if (gameField.Field[pos.X, pos.Y] == FieldType.Wall)
+                return false;
+
+            // Ziel wird wie Wand behandelt
+            if (!isGoal && gameField.Field[pos.X, pos.Y] == FieldType.Goal)
+                return false;
+
+            return true;
+        }
 
         private int CalculateTurnCost(Direction current, Direction target)
         {
             if (current == target) return 0;
-
             int diff = ((int)target - (int)current + 4) % 4;
             if (diff > 2) diff = 4 - diff;
-
             return diff;
         }
 
@@ -205,13 +214,6 @@ namespace Open_Day
                 case Direction.Left: return new Point(pos.X - 1, pos.Y);
                 default: return pos;
             }
-        }
-
-        private bool IsValidMove(Point pos)
-        {
-            return pos.X >= 0 && pos.X < gridSize &&
-                   pos.Y >= 0 && pos.Y < gridSize &&
-                   gameField.Field[pos.X, pos.Y] != FieldType.Wall;
         }
 
         private class PathNode : IComparable<PathNode>

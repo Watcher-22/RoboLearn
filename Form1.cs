@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Data;
 using System.Drawing;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -13,11 +14,13 @@ namespace Open_Day
     public partial class Form1 : Form
     {
         private GameField gameField;
-        private const int CELL_SIZE = 30;
-        private const int GRID_SIZE = 18;
+        internal const int CELL_SIZE = 30;
+        internal const int GRID_SIZE = 18;
         private FlowLayoutPanel blockPalette;
         private FlowLayoutPanel codeWorkspace;
-        private List<CodeBlock> activeBlocks = new List<CodeBlock>();
+        private BufferedGraphics graphicsBuffer;
+        private BufferedGraphicsContext context;
+        private ListBox thoughtProcessBox;
 
 
         // Controls deklarieren
@@ -29,6 +32,7 @@ namespace Open_Day
         private Button btnCollectCoin;
         private Button btnStart;
         private Button btnReset;
+        private int delay = 400;
 
         // Goodies
         private Timer gameTimer;
@@ -111,7 +115,7 @@ namespace Open_Day
             // Generiert das Spielfeld neu
             if (gamePanel != null)
             {
-                gamePanel.Invalidate();
+                UpdateGameField();
             }
 
             gameTimeSeconds = 0;
@@ -151,11 +155,13 @@ namespace Open_Day
             gameTimer.Tick += GameTimer_Tick;
 
             this.Controls.AddRange(new Control[] { timerLabel, scoreLabel });
+
+
         }
 
         private void InitializeControls()
         {
-            this.Size = new Size(1200, 700);
+            this.Size = new Size(1250, 650);
             this.Text = "Parcour";
 
             gamePanel = new Panel
@@ -164,6 +170,17 @@ namespace Open_Day
                 Size = new Size(GRID_SIZE * CELL_SIZE, GRID_SIZE * CELL_SIZE),
                 BorderStyle = BorderStyle.FixedSingle
             };
+
+            // Double Buffering ... Es funktioniert, also lassen wir es so
+            typeof(Panel).InvokeMember("DoubleBuffered",
+                BindingFlags.SetProperty | BindingFlags.Instance | BindingFlags.NonPublic,
+                null, gamePanel, new object[] { true });
+
+            context = BufferedGraphicsManager.Current;
+            context.MaximumBuffer = new Size(GRID_SIZE * CELL_SIZE + 1, GRID_SIZE * CELL_SIZE + 1);
+            graphicsBuffer = context.Allocate(gamePanel.CreateGraphics(),
+                gamePanel.ClientRectangle);
+
             gamePanel.Paint += GamePanel_Paint;
 
             // Schwierigkeitsauswahl
@@ -172,7 +189,7 @@ namespace Open_Day
                 Location = new Point(gamePanel.Right + 20, 20),
                 Size = new Size(150, 25)
             };
-            difficultySelect.Items.AddRange(new string[] { "Level 1: GUI", "Level 2: Variablen", "Level 3: Methoden", "Level 4 - Optimale Route" });
+            difficultySelect.Items.AddRange(new string[] { "Level 1: Manuell", "Level 2: Logisch", "Level 3: Selfmade", "Level 4: Automatisch" });
             difficultySelect.SelectedIndex = 0;
             difficultySelect.SelectedIndexChanged += DifficultySelect_SelectedIndexChanged;
 
@@ -185,7 +202,7 @@ namespace Open_Day
             btnReset = CreateButton("Zurücksetzen", gamePanel.Right + 20, 260);
 
 
-            // Controls zur Form hinzufügen
+
             this.Controls.AddRange(new Control[] {
                 gamePanel,
                 difficultySelect,
@@ -197,10 +214,22 @@ namespace Open_Day
                 btnReset,
                 blockPalette,  
                 codeWorkspace  
-    });
+            });
+
+          
 
             // Block-Palette und Workspace für Level 2 (initial versteckt)
             InitializeBlockPanels();
+
+            thoughtProcessBox = new ListBox
+            {
+                Location = new Point(blockPalette.Right + 20, 60),
+                Size = new Size(400, 400),
+                Font = new Font("Arial", 10),
+                Visible = false
+            };
+
+            this.Controls.Add(thoughtProcessBox);
 
             InitializeGameControls();
         }
@@ -211,7 +240,7 @@ namespace Open_Day
             blockPalette = new FlowLayoutPanel
             {
                 Location = new Point(gamePanel.Right + 20, 60),
-                Size = new Size(200, 400), // Höhe reduziert
+                Size = new Size(200, 400),
                 FlowDirection = FlowDirection.TopDown,
                 BorderStyle = BorderStyle.FixedSingle,
                 AutoScroll = true,
@@ -283,8 +312,15 @@ namespace Open_Day
 
         private void GamePanel_Paint(object sender, PaintEventArgs e)
         {
-            DrawGrid(e.Graphics);
-            DrawGameElements(e.Graphics);
+            if (graphicsBuffer != null)
+            {
+                // Zeichnet in den Buffer
+                DrawGrid(graphicsBuffer.Graphics);
+                DrawGameElements(graphicsBuffer.Graphics);
+
+                // Kopiert den Buffer auf das Panel
+                graphicsBuffer.Render(e.Graphics);
+            }
         }
 
         private void DrawGrid(Graphics g)
@@ -300,6 +336,8 @@ namespace Open_Day
 
         private void DrawGameElements(Graphics g)
         {
+            g.Clear(Color.White);
+            DrawGrid(g);
             for (int x = 0; x < GRID_SIZE; x++)
             {
                 for (int y = 0; y < GRID_SIZE; y++)
@@ -320,13 +358,16 @@ namespace Open_Day
                             g.FillRectangle(Brushes.Blue, cellRect);
                             break;
                     }
-
-                    if (gameField.Bot.X == x && gameField.Bot.Y == y)
-                    {
-                        DrawBot(g, cellRect, gameField.Bot.Facing);
-                    }
                 }
             }
+
+            var botRect = new Rectangle(
+            gameField.Bot.X * CELL_SIZE,
+            gameField.Bot.Y * CELL_SIZE,
+            CELL_SIZE,
+            CELL_SIZE
+            );
+            DrawBot(g, botRect, gameField.Bot.Facing);
         }
 
         private void DrawBot(Graphics g, Rectangle rect, Direction facing)
@@ -366,22 +407,22 @@ namespace Open_Day
                 {
                     case "Vorwärts":
                         MoveForward();
-                        gamePanel.Invalidate();
+                        UpdateGameField();
                         break;
 
                     case "Links drehen":
                         TurnLeft();
-                        gamePanel.Invalidate();
+                        UpdateGameField();
                         break;
 
                     case "Rechts drehen":
                         TurnRight();
-                        gamePanel.Invalidate();
+                        UpdateGameField();
                         break;
 
                     case "Münze aufheben":
                         CollectCoin();
-                        gamePanel.Invalidate();
+                        UpdateGameField();
                         break;
 
                     case "Start":
@@ -415,7 +456,7 @@ namespace Open_Day
 
                     case "Zurücksetzen":
                         ResetGame();
-                        gamePanel.Invalidate();
+                        UpdateGameField();
                         break;
                 }
             }
@@ -427,8 +468,11 @@ namespace Open_Day
             btnTurnLeft.Visible = true;
             btnTurnRight.Visible = true;
             btnCollectCoin.Visible = true;
+            btnReset.Visible = true;
             blockPalette.Visible = false;
             codeWorkspace.Visible = false;
+            btnReset.Location = new Point(gamePanel.Right + 20, 260);
+            btnStart.Location = new Point(gamePanel.Right + 20, 220);
         }
 
         private void SetupLevel2()
@@ -446,7 +490,6 @@ namespace Open_Day
             codeWorkspace.Controls.Clear();
             CreateCommandButtons();
 
-            // Start/Reset-Buttons anpassen
             btnStart.Location = new Point(codeWorkspace.Left, codeWorkspace.Bottom + 10);
             btnReset.Location = new Point(btnStart.Right + 10, codeWorkspace.Bottom + 10);
         }
@@ -466,6 +509,31 @@ namespace Open_Day
             btnReset.Location = new Point(gamePanel.Right + 20, 100);
         }
 
+        private void SetupLevel4()
+        {
+            btnMoveForward.Visible = false;
+            btnTurnLeft.Visible = false;
+            btnTurnRight.Visible = false;
+            btnCollectCoin.Visible = false;
+            blockPalette.Visible = false;
+            codeWorkspace.Visible = false;
+            thoughtProcessBox.Visible = true;
+
+            btnStart.Visible = true;
+            btnStart.Location = new Point(gamePanel.Right + 20, 60);
+            btnReset.Location = new Point(gamePanel.Right + 20, 100);
+
+            // Überschrift für die Gedankenschritte
+            Label thoughtLabel = new Label
+            {
+                Text = "Gedankenschritte des Bots:",
+                Location = new Point(gamePanel.Right + 20, 140),
+                Size = new Size(300, 20),
+                Font = new Font("Arial", 10, FontStyle.Bold)
+            };
+            this.Controls.Add(thoughtLabel);
+        }
+
         private void ResetGame()
         {
             gameTimer.Stop();
@@ -478,6 +546,22 @@ namespace Open_Day
             {
                 codeWorkspace.Controls.Clear();
             }
+
+            if (graphicsBuffer != null)
+            {
+                graphicsBuffer.Graphics.Clear(gamePanel.BackColor);
+                DrawGrid(graphicsBuffer.Graphics);
+                DrawGameElements(graphicsBuffer.Graphics);
+                graphicsBuffer.Render();
+            }
+
+            if (difficultySelect.SelectedIndex == 4)
+            {
+                thoughtProcessBox.Items.Clear();
+            }
+
+            gamePanel.Invalidate();
+
         }
 
         #endregion
@@ -500,14 +584,17 @@ namespace Open_Day
         {
             switch (difficultySelect.SelectedIndex)
             {
-                case 0: // Level 1: GUI
+                case 0: 
                     SetupLevel1();
                     break;
-                case 1: // Level 2: Variablen
+                case 1: 
                     SetupLevel2();
                     break;
-                case 2: // Level 3: Methoden
+                case 2:
                     SetupLevel3();
+                    break;
+                case 3:
+                    SetupLevel4();
                     break;
             }
         }
@@ -546,8 +633,8 @@ namespace Open_Day
                             if (continueLoop)
                             {
                                 ExecuteCommand(selectedCommand);
-                                gamePanel.Invalidate();
-                                await Task.Delay(500);
+                                UpdateGameField();
+                                await Task.Delay(delay);
                                 currentRepeat++;
                             }
                         }
@@ -556,8 +643,8 @@ namespace Open_Day
                 else
                 {
                     ExecuteCommand(block.BlockType);
-                    gamePanel.Invalidate();
-                    await Task.Delay(500);
+                    UpdateGameField();
+                    await Task.Delay(delay);
                 }
             }
         }
@@ -583,7 +670,19 @@ namespace Open_Day
         private void UpdateScoreDisplay()
         {
             scoreLabel.Text = $"Münzen: {collectedCoins}/{totalCoins}";
-        }    
+        }
+
+        private void UpdateGameField()
+        {
+            if (gamePanel != null)
+            {
+                gamePanel.Invalidate(new Rectangle(
+                    gameField.Bot.X * CELL_SIZE - CELL_SIZE,
+                    gameField.Bot.Y * CELL_SIZE - CELL_SIZE,
+                    CELL_SIZE * 3,
+                    CELL_SIZE * 3));
+            }
+        }
 
         #endregion
 
@@ -604,6 +703,7 @@ namespace Open_Day
             {
                 gameField.Bot.MoveForward();
                 CheckWinCondition();
+                UpdateGameField(); 
             }
             else
             {
@@ -705,33 +805,57 @@ namespace Open_Day
 
         private async Task ExecuteOptimalPath()
         {
+            thoughtProcessBox.Items.Clear();
             var pathFinder = new PathFinder(gameField);
             var optimalPath = pathFinder.FindOptimalPath();
+
             Point currentPosition = new Point(gameField.Bot.X, gameField.Bot.Y);
 
             foreach (var (position, facing) in optimalPath)
             {
                 if (gameField.Bot.Facing != facing)
                 {
+                    Direction currentFacing = gameField.Bot.Facing;
+                    thoughtProcessBox.Items.Insert(0, $"Drehe von {GetDirectionName(currentFacing)} nach {GetDirectionName(facing)}");
                     await TurnToDirection(facing);
                 }
 
                 if (position != currentPosition)
                 {
+                    thoughtProcessBox.Items.Insert(0, "Gehe einen Schritt vorwärts");
                     MoveForward();
                     currentPosition = position;
                     gamePanel.Invalidate();
-                    await Task.Delay(500);
+                    await Task.Delay(delay);
                 }
 
                 if (gameField.Field[currentPosition.X, currentPosition.Y] == FieldType.Coin)
                 {
+                    thoughtProcessBox.Items.Insert(0, "Hebe Münze auf");
                     CollectCoin();
                     gamePanel.Invalidate();
-                    await Task.Delay(500);
+                    await Task.Delay(delay);
                 }
             }
         }
+
+        private string GetDirectionName(Direction direction)
+        {
+            switch (direction)
+            {
+                case Direction.Up:
+                    return "Norden";
+                case Direction.Right:
+                    return "Osten";
+                case Direction.Down:
+                    return "Süden";
+                case Direction.Left:
+                    return "Westen";
+                default:
+                    return "Unbekannt";
+            }
+        }
+
 
         private async Task TurnToDirection(Direction targetDirection)
         {
@@ -746,8 +870,8 @@ namespace Open_Day
                 {
                     TurnRight();
                 }
-                gamePanel.Invalidate();
-                await Task.Delay(500);
+                UpdateGameField();
+                await Task.Delay(delay);
             }
         }
 
