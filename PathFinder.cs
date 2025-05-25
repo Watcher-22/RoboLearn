@@ -9,25 +9,28 @@ namespace Open_Day
 {
     public class PathFinder
     {
+        private static long nextNodeId = 0;
+
         private class PriorityQueue
         {
-            private List<PathNode> elements = new List<PathNode>();
+            private SortedSet<PathNode> elements = new SortedSet<PathNode>();
             public int Count => elements.Count;
 
             public void Enqueue(PathNode item)
             {
                 elements.Add(item);
-                elements.Sort((a, b) => a.Cost.CompareTo(b.Cost));
             }
 
             public PathNode Dequeue()
             {
                 if (elements.Count == 0)
                     throw new InvalidOperationException("Queue is empty");
-                var item = elements[0];
-                elements.RemoveAt(0);
+                var item = elements.Min; 
+                elements.Remove(item);
                 return item;
             }
+
+            public bool IsEmpty => elements.Count == 0;
         }
 
         private GameField gameField;
@@ -41,6 +44,63 @@ namespace Open_Day
             this.gridSize = Form1.GRID_SIZE;
             this.coins = FindCoins();
             this.goal = FindGoal();
+        }
+
+        public List<(Point position, Direction facing)> FindPathWithGreedyStrategy()
+        {
+            var completePath = new List<(Point position, Direction facing)>();
+            Point currentActualPos = new Point(gameField.Bot.X, gameField.Bot.Y);
+            Direction currentActualDir = gameField.Bot.Facing;
+
+            var remainingCoins = new List<Point>(this.coins);
+
+            while (remainingCoins.Count > 0)
+            {
+                Point nearestCoin = Point.Empty;
+                List<(Point position, Direction facing)> shortestPathToCoin = null;
+                int minPathLength = int.MaxValue;
+
+                foreach (var coinPos in remainingCoins)
+                {
+                    // false for canEnterGoalTile: don't treat coin as goal if it happens to be on goal tile
+                    var pathToCoin = FindPathBetweenPoints(currentActualPos, currentActualDir, coinPos, false); 
+
+                    if (pathToCoin != null && pathToCoin.Count > 0)
+                    {
+                        if (pathToCoin.Count < minPathLength)
+                        {
+                            minPathLength = pathToCoin.Count;
+                            nearestCoin = coinPos;
+                            shortestPathToCoin = pathToCoin;
+                        }
+                    }
+                }
+
+                if (shortestPathToCoin == null || nearestCoin == Point.Empty)
+                {
+                    // No path to any of the remaining coins
+                    break; 
+                }
+
+                completePath.AddRange(shortestPathToCoin);
+                currentActualPos = nearestCoin;
+                // Ensure shortestPathToCoin is not empty before accessing Last()
+                if (shortestPathToCoin.Any()) 
+                {
+                    currentActualDir = shortestPathToCoin.Last().facing;
+                }
+                remainingCoins.Remove(nearestCoin);
+            }
+
+            // After collecting all reachable coins, go to the goal
+            // true for canEnterGoalTile: allow entering the goal tile
+            var pathToGoal = FindPathBetweenPoints(currentActualPos, currentActualDir, this.goal, true); 
+            if (pathToGoal != null && pathToGoal.Count > 0)
+            {
+                completePath.AddRange(pathToGoal);
+            }
+
+            return completePath;
         }
 
         private List<Point> FindCoins()
@@ -73,49 +133,45 @@ namespace Open_Day
 
         public List<(Point position, Direction facing)> FindOptimalPath()
         {
-            var startPos = new Point(gameField.Bot.X, gameField.Bot.Y);
-            var currentDir = gameField.Bot.Facing;
+            return this.FindPathWithGreedyStrategy();
+        }
 
+        private List<(Point position, Direction facing)> FindPathBetweenPoints(
+            Point startPos,
+            Direction startDir,
+            Point targetPos,
+            bool canEnterGoalTile) // Used to determine if the targetPos (if it's the main goal) can be entered
+        {
             var queue = new PriorityQueue();
-            var initialCoins = new HashSet<Point>();
-            // Check if starting position is a coin
-            if (gameField.Field[startPos.X, startPos.Y] == FieldType.Coin)
-            {
-                initialCoins.Add(startPos);
-            }
-            queue.Enqueue(new PathNode(startPos, currentDir, 0, new List<(Point, Direction)>(), initialCoins));
+            // Initial PathNode: cost 0, empty path, empty (or ignored) coin set
+            queue.Enqueue(new PathNode(startPos, startDir, 0, new List<(Point, Direction)>(), new HashSet<Point>()));
 
-            var visited = new HashSet<(Point Position, Direction Facing, string uniqueCoinRepresentation)>();
+            var visited = new HashSet<(Point Position, Direction Facing)>();
 
-            while (queue.Count > 0)
+            while (!queue.IsEmpty) // Using IsEmpty property
             {
                 var current = queue.Dequeue();
 
-                var hashableCollectedCoinsKey = GetHashableCoinsString(current.CollectedCoins);
-                var visitedKey = (current.Position, current.Facing, hashableCollectedCoinsKey);
-
+                var visitedKey = (current.Position, current.Facing);
                 if (visited.Contains(visitedKey))
                 {
                     continue;
                 }
                 visited.Add(visitedKey);
 
-                // Goal Condition
-                bool allCoinsCollected = this.coins.All(c => current.CollectedCoins.Contains(c));
-                if (current.Position.Equals(this.goal) && allCoinsCollected)
+                if (current.Position.Equals(targetPos))
                 {
-                    return current.Path;
+                    return current.Path; // Path found
                 }
 
-                // Expand Node
-                // The isGoal parameter for GetNextMoves determines if the goal tile can be entered.
-                // It should only be true if all coins are collected.
-                foreach (var nextMove in GetNextMoves(current, allCoinsCollected))
+                // Pass canEnterGoalTile to GetNextMoves, which then passes it to IsValidMove
+                // to check if the specific targetPos (if it's the main goal tile) can be stepped on.
+                foreach (var nextMove in GetNextMoves(current, canEnterGoalTile))
                 {
+                    // The visited check at the start of the loop handles redundancy.
                     queue.Enqueue(nextMove);
                 }
             }
-
             return new List<(Point position, Direction facing)>(); // No path found
         }
 
@@ -203,7 +259,8 @@ namespace Open_Day
             public Direction Facing { get; }
             public int Cost { get; }
             public List<(Point position, Direction facing)> Path { get; }
-    public HashSet<Point> CollectedCoins { get; }
+            public HashSet<Point> CollectedCoins { get; }
+            public long Id { get; }
 
             public PathNode(Point pos, Direction facing, int cost,
         List<(Point, Direction)> path, HashSet<Point> collectedCoins)
@@ -212,12 +269,19 @@ namespace Open_Day
                 Facing = facing;
                 Cost = cost;
                 Path = path;
-        CollectedCoins = collectedCoins;
+                CollectedCoins = collectedCoins;
+                Id = System.Threading.Interlocked.Increment(ref PathFinder.nextNodeId);
             }
 
             public int CompareTo(PathNode other)
             {
-                return Cost.CompareTo(other.Cost);
+                if (other == null) return 1;
+                int costComparison = Cost.CompareTo(other.Cost);
+                if (costComparison != 0)
+                {
+                    return costComparison;
+                }
+                return Id.CompareTo(other.Id);
             }
         }
     }
