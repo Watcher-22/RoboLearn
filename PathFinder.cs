@@ -71,88 +71,55 @@ namespace Open_Day
             return Point.Empty;
         }
 
-        private List<Point> CalculateOptimalCoinOrder(Point start, List<Point> remainingCoins)
-        {
-            if (!remainingCoins.Any())
-                return new List<Point>();
-
-            var optimalOrder = new List<Point>();
-            var currentPos = start;
-            var unvisitedCoins = new List<Point>(remainingCoins);
-
-            while (unvisitedCoins.Count > 0)
-            {
-                var distances = unvisitedCoins.Select(coin =>
-                {
-                    var pathLength = FindPathTo(currentPos, coin, gameField.Bot.Facing, false).Count;
-                    return (coin, pathLength);
-                });
-
-                var nearest = distances.OrderBy(x => x.pathLength).First().coin;
-                optimalOrder.Add(nearest);
-                currentPos = nearest;
-                unvisitedCoins.Remove(nearest);
-            }
-
-            return optimalOrder;
-        }
-
         public List<(Point position, Direction facing)> FindOptimalPath()
         {
-            var completePath = new List<(Point position, Direction facing)>();
             var startPos = new Point(gameField.Bot.X, gameField.Bot.Y);
             var currentDir = gameField.Bot.Facing;
 
-            
-            var optimalCoinOrder = CalculateOptimalCoinOrder(startPos, coins);
-
-            // Optimaler Pfad
-            var currentPos = startPos;
-            foreach (var coinPos in optimalCoinOrder)
-            {
-                var pathToCoin = FindPathTo(currentPos, coinPos, currentDir, false);
-                completePath.AddRange(pathToCoin);
-                currentPos = coinPos;
-                currentDir = completePath[completePath.Count - 1].facing;
-            }
-
-            // Erst ins Ziel, wenn alle Münzen
-            var pathToGoal = FindPathTo(currentPos, goal, currentDir, true);
-            completePath.AddRange(pathToGoal);
-
-            return completePath;
-        }
-
-        private List<(Point position, Direction facing)> FindPathTo(
-            Point start, Point target, Direction startFacing, bool isGoal)
-        {
-            var visited = new HashSet<Point>();
             var queue = new PriorityQueue();
-            queue.Enqueue(new PathNode(start, startFacing, 0, new List<(Point, Direction)>()));
-            visited.Add(start);
+            var initialCoins = new HashSet<Point>();
+            // Check if starting position is a coin
+            if (gameField.Field[startPos.X, startPos.Y] == FieldType.Coin)
+            {
+                initialCoins.Add(startPos);
+            }
+            queue.Enqueue(new PathNode(startPos, currentDir, 0, new List<(Point, Direction)>(), initialCoins));
+
+            var visited = new HashSet<(Point Position, Direction Facing, string uniqueCoinRepresentation)>();
 
             while (queue.Count > 0)
             {
                 var current = queue.Dequeue();
-                if (current.Position == target)
+
+                var hashableCollectedCoinsKey = GetHashableCoinsString(current.CollectedCoins);
+                var visitedKey = (current.Position, current.Facing, hashableCollectedCoinsKey);
+
+                if (visited.Contains(visitedKey))
+                {
+                    continue;
+                }
+                visited.Add(visitedKey);
+
+                // Goal Condition
+                bool allCoinsCollected = this.coins.All(c => current.CollectedCoins.Contains(c));
+                if (current.Position.Equals(this.goal) && allCoinsCollected)
                 {
                     return current.Path;
                 }
 
-                foreach (var next in GetNextMoves(current, isGoal))
+                // Expand Node
+                // The isGoal parameter for GetNextMoves determines if the goal tile can be entered.
+                // It should only be true if all coins are collected.
+                foreach (var nextMove in GetNextMoves(current, allCoinsCollected))
                 {
-                    if (!visited.Contains(next.Position))
-                    {
-                        visited.Add(next.Position);
-                        queue.Enqueue(next);
-                    }
+                    queue.Enqueue(nextMove);
                 }
             }
 
-            return new List<(Point position, Direction facing)>();
+            return new List<(Point position, Direction facing)>(); // No path found
         }
 
-        private List<PathNode> GetNextMoves(PathNode node, bool isGoal)
+        private List<PathNode> GetNextMoves(PathNode node, bool canEnterGoal)
         {
             var moves = new List<PathNode>();
             var directions = Enum.GetValues(typeof(Direction)).Cast<Direction>();
@@ -162,7 +129,7 @@ namespace Open_Day
                 int turnCost = CalculateTurnCost(node.Facing, dir);
                 var newPos = GetNextPosition(node.Position, dir);
 
-                if (IsValidMove(newPos, isGoal))
+                if (IsValidMove(newPos, canEnterGoal))
                 {
                     var newPath = new List<(Point, Direction)>(node.Path);
                     if (turnCost > 0)
@@ -170,18 +137,25 @@ namespace Open_Day
                         newPath.Add((node.Position, dir));
                     }
                     newPath.Add((newPos, dir));
+                    var newCollectedCoins = new HashSet<Point>(node.CollectedCoins);
+                    if (gameField.Field[newPos.X, newPos.Y] == FieldType.Coin)
+                    {
+                        newCollectedCoins.Add(newPos);
+                    }
+
                     moves.Add(new PathNode(
                         newPos,
                         dir,
                         node.Cost + turnCost + 1,
-                        newPath
+                        newPath,
+                        newCollectedCoins
                     ));
                 }
             }
             return moves;
         }
 
-        private bool IsValidMove(Point pos, bool isGoal)
+        private bool IsValidMove(Point pos, bool canEnterGoalTile)
         {
             if (pos.X < 0 || pos.X >= gridSize || pos.Y < 0 || pos.Y >= gridSize)
                 return false;
@@ -189,8 +163,8 @@ namespace Open_Day
             if (gameField.Field[pos.X, pos.Y] == FieldType.Wall)
                 return false;
 
-            // Ziel wird wie Wand behandelt
-            if (!isGoal && gameField.Field[pos.X, pos.Y] == FieldType.Goal)
+            // Goal tile is treated as a wall if not all coins are collected OR if canEnterGoalTile is false
+            if (gameField.Field[pos.X, pos.Y] == FieldType.Goal && !canEnterGoalTile)
                 return false;
 
             return true;
@@ -216,20 +190,29 @@ namespace Open_Day
             }
         }
 
+        private string GetHashableCoinsString(HashSet<Point> coins)
+        {
+            if (coins == null || coins.Count == 0) return "";
+            // Order by X then Y to ensure consistent string representation
+            return string.Join(";", coins.OrderBy(p => p.X).ThenBy(p => p.Y).Select(p => $"{p.X},{p.Y}"));
+        }
+
         private class PathNode : IComparable<PathNode>
         {
             public Point Position { get; }
             public Direction Facing { get; }
             public int Cost { get; }
             public List<(Point position, Direction facing)> Path { get; }
+    public HashSet<Point> CollectedCoins { get; }
 
             public PathNode(Point pos, Direction facing, int cost,
-                List<(Point, Direction)> path)
+        List<(Point, Direction)> path, HashSet<Point> collectedCoins)
             {
                 Position = pos;
                 Facing = facing;
                 Cost = cost;
                 Path = path;
+        CollectedCoins = collectedCoins;
             }
 
             public int CompareTo(PathNode other)
